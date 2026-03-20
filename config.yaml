@@ -1,0 +1,26 @@
+# Inference Engine Configuration
+# Switch between llama.cpp (local/macOS) and SGLang (Linux/GPU)
+
+# Current active backend: llama.cpp | sglang
+backend: llama.cpp
+
+# llama.cpp Configuration (for macOS/CPU)
+llamacpp:
+  host: "127.0.0.1"
+  port: 8080
+  model: "./models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+  ctx_size: 4096
+  threads: 4
+  temperature: 0.7
+  top_p: 0.9
+  chat_template: "qwen"
+
+# SGLang Configuration (for Linux/GPU deployment)
+sglang:
+  host: "127.0.0.1"
+  port: 30000
+  model: "Qwen/Qwen2.5-0.5B-Instruct"  # HuggingFace model name
+  tp_size: 1  # Tensor parallelism (set to num GPUs)
+  mem_fraction: 0.85
+  # For remote SGLang server, set:
+  # remote_url: "http://your-sglang-server:30000"

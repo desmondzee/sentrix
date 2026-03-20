@@ -1,139 +1,192 @@
-# Local LLM Server with llama.cpp
+# Local LLM Server
 
-A simple on-device LLM server using llama.cpp with OpenAI-compatible API endpoints.
-
-## Overview
-
-This setup provides:
-- **llama.cpp server** - Fast, efficient inference on CPU/GPU
-- **Qwen2.5-0.5B-Instruct** - A small but capable SLM (~350MB)
-- **OpenAI-compatible API** - `/v1/chat/completions` and `/completion` endpoints
-- **Python client** - Easy-to-use client with interactive chat
+A flexible inference server supporting both **llama.cpp** (macOS/local) and **SGLang** (Linux/GPU) backends.
 
 ## Quick Start
 
-### 1. Start the Server
+### Option 1: llama.cpp (Recommended for macOS)
+
+Best for Apple Silicon with Metal GPU acceleration:
 
 ```bash
-chmod +x start_server.sh
 ./start_server.sh
 ```
 
-The server will start on `http://127.0.0.1:8080`
+### Option 2: SGLang (Linux/GPU only)
 
-### 2. Use the Python Client
+For high-throughput GPU serving on Linux:
 
-**Interactive chat:**
 ```bash
+# Native (Linux with CUDA)
+./start_server.sh sglang
+
+# Or with Docker
+HF_TOKEN=your_token docker-compose -f docker-compose.sglang.yml up
+```
+
+## Backend Comparison
+
+| Feature | llama.cpp | SGLang |
+|---------|-----------|--------|
+| **Best For** | macOS/Apple Silicon | Linux + NVIDIA GPUs |
+| **GPU Support** | Metal (macOS) | CUDA, ROCm |
+| **Model Format** | GGUF | HuggingFace |
+| **Throughput** | Good | Excellent |
+| **Setup** | Simple | Complex (requires CUDA) |
+| **macOS Support** | ✅ Native | ❌ Docker only |
+
+## Usage
+
+Once the server is running, use the same client:
+
+```bash
+# Interactive chat
 python3 client.py --chat
-```
 
-**Single prompt:**
-```bash
+# Single prompt
 python3 client.py --prompt "What is the capital of France?"
-```
 
-**With streaming:**
-```bash
-python3 client.py --prompt "Tell me a joke" --stream
-```
-
-### 3. Direct API Usage
-
-**Chat Completion (OpenAI-compatible):**
-```bash
-curl -X POST http://127.0.0.1:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "messages": [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "Hello!"}
-    ],
-    "temperature": 0.7,
-    "max_tokens": 512
-  }'
-```
-
-**Simple Completion:**
-```bash
-curl -X POST http://127.0.0.1:8080/completion \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Once upon a time",
-    "temperature": 0.7,
-    "n_predict": 256
-  }'
+# With streaming
+python3 client.py --prompt "Tell me a story" --stream
 ```
 
 ## API Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /v1/chat/completions` | OpenAI-compatible chat completion |
-| `POST /completion` | Simple text completion |
-| `GET /health` | Server health check |
+| `POST /v1/chat/completions` | OpenAI-compatible chat |
+| `POST /completion` | Text completion |
+| `GET /health` | Health check |
 | `GET /models` | List available models |
 
-## Client Options
+## Configuration
 
+Edit `config.yaml` to switch backends:
+
+```yaml
+backend: llamacpp  # or sglang
+
+llamacpp:
+  host: "127.0.0.1"
+  port: 8080
+  model: "./models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+  
+sglang:
+  host: "127.0.0.1"
+  port: 30000
+  model: "Qwen/Qwen2.5-0.5B-Instruct"
+  tp_size: 1
 ```
-python3 client.py [OPTIONS]
 
-Options:
-  -p, --prompt TEXT       Single prompt for completion
-  -c, --chat              Interactive chat mode
-  -t, --temperature FLOAT Sampling temperature (default: 0.7)
-  -m, --max-tokens INT    Maximum tokens to generate (default: 512)
-  -s, --stream            Stream the response
+## Deploying SGLang on Linux
+
+### Native Installation
+
+```bash
+# On Linux with CUDA
+pip install sglang
+
+# Start server
+python3 -m sglang.launch_server \
+    --model-path Qwen/Qwen2.5-0.5B-Instruct \
+    --host 0.0.0.0 \
+    --port 30000
 ```
 
-## Hardware Requirements
+### Docker Deployment
 
-- **Memory**: ~500MB RAM
-- **Storage**: ~400MB for the model
-- **CPU**: Any modern CPU (Apple Silicon optimized)
-- **GPU**: Optional (Metal support on Apple Silicon)
+```bash
+# Run SGLang in Docker (Linux only)
+docker run --gpus all \
+    --shm-size 32g \
+    -p 30000:30000 \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    --env "HF_TOKEN=$HF_TOKEN" \
+    --ipc=host \
+    lmsysorg/sglang:latest \
+    python3 -m sglang.launch_server \
+      --model-path Qwen/Qwen2.5-0.5B-Instruct \
+      --host 0.0.0.0 \
+      --port 30000
+```
 
-## Swapping Models
+### Kubernetes
 
-To use a different model:
+See [SGLang K8s docs](https://docs.sglang.io/get_started/install.html#method-4-using-kubernetes)
 
-1. Download a GGUF model from HuggingFace
-2. Update the `MODEL_PATH` in `start_server.sh`
-3. Restart the server
+## Switching Backends
 
-Popular small models:
-- **Qwen2.5-0.5B** (~350MB) - Good general purpose
-- **TinyLlama-1.1B** (~600MB) - Decent performance
-- **Phi-2** (~1.6GB) - Strong reasoning
+```bash
+# Use llama.cpp (default)
+./start_server.sh
 
-## Troubleshooting
+# Use SGLang
+./start_server.sh sglang
 
-**Server won't start:**
-- Check if model file exists: `ls -lh models/`
-- Check if port 8080 is in use: `lsof -i :8080`
-
-**Connection errors:**
-- Ensure server is running: `curl http://127.0.0.1:8080/health`
-- Check firewall settings
-
-**Slow responses:**
-- Increase `--threads` in `start_server.sh` (match CPU cores)
-- Use a smaller quantized model (Q4_K_M is a good balance)
+# Or set via environment
+BACKEND=sglang ./start_server.sh
+```
 
 ## Project Structure
 
 ```
 .
 ├── llama.cpp/              # llama.cpp source and build
-├── models/                 # GGUF model files
-│   └── qwen2.5-0.5b-instruct-q4_k_m.gguf
-├── start_server.sh         # Server startup script
+├── sglang/                 # SGLang source (reference)
+├── models/                 # GGUF models for llama.cpp
+├── venv/                   # Python virtual environment
+├── config.yaml             # Backend configuration
+├── start_server.sh         # Main startup script
+├── start_server_sglang.sh  # SGLang-specific startup
+├── docker-compose.sglang.yml  # Docker setup for SGLang
 ├── client.py               # Python API client
 └── README.md               # This file
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BACKEND` | Choose backend: `llamacpp` or `sglang` |
+| `SGLANG_HOST` | SGLang server host |
+| `SGLANG_PORT` | SGLang server port |
+| `SGLANG_MODEL` | HuggingFace model name |
+| `SGLANG_TP_SIZE` | Tensor parallelism (GPUs) |
+| `HF_TOKEN` | HuggingFace token for gated models |
+
+## Hardware Requirements
+
+### llama.cpp (macOS)
+- **Memory**: ~500MB RAM
+- **GPU**: Apple Silicon (Metal) or CPU
+- **Storage**: ~400MB per model
+
+### SGLang (Linux)
+- **GPU**: NVIDIA GPU with 8GB+ VRAM
+- **Memory**: 16GB+ RAM
+- **Storage**: ~2GB per model
+- **OS**: Linux (Ubuntu 20.04+ recommended)
+
+## Troubleshooting
+
+### llama.cpp on macOS
+```bash
+# If server won't start
+lsof -i :8080  # Check port usage
+pkill -f llama-server  # Kill existing server
+```
+
+### SGLang on Linux
+```bash
+# Check CUDA is available
+nvidia-smi
+
+# If OOM errors, reduce memory fraction
+python3 -m sglang.launch_server --mem-fraction 0.70 ...
 ```
 
 ## License
 
 - llama.cpp: MIT License
-- Qwen2.5: Apache 2.0 License
+- SGLang: Apache 2.0 License
+- Models: See respective HuggingFace pages
